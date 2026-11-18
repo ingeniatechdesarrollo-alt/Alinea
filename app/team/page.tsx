@@ -22,7 +22,7 @@ export default async function TeamPage() {
         <h1 className="text-2xl font-bold">Mi equipo</h1>
         <p className="text-sm text-slate-500">
           Arma tu equipo de trabajo (oficiales, ayudantes u otros colaboradores que no necesitan entrar
-          al sistema) para poder asignarles tareas y verlos en el calendario de obras.
+          al sistema) para poder asignarles tareas y verlos en el calendario de equipo.
         </p>
       </div>
       <TeamManager initialTeamMembers={teamMembers} />
