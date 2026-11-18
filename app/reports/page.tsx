@@ -1,0 +1,76 @@
+import { prisma } from "@/lib/prisma";
+import { requireUser } from "@/lib/session";
+import { recalculateTaskPriorities } from "@/lib/autoPriority";
+import { visibleProjectTasks } from "@/lib/taskAccess";
+import ReportsView from "./ReportsView";
+
+export default async function ReportsPage() {
+  const user = await requireUser();
+
+  // El gerente ve todas las obras del sistema, sin necesidad de ser dueño
+  // ni miembro de cada una.
+  const projectWhere =
+    user.role === "GERENTE"
+      ? {}
+      : { OR: [{ ownerId: user.userId }, { members: { some: { userId: user.userId } } }] };
+
+  await recalculateTaskPriorities({
+    project: projectWhere
+  });
+
+  const projects = await prisma.project.findMany({
+    where: projectWhere,
+    include: {
+      owner: { select: { id: true, name: true, email: true } },
+      members: { include: { user: { select: { id: true, name: true, email: true } } } },
+      tasks: {
+        include: { assignees: { select: { user: { select: { id: true, name: true } } } } },
+        orderBy: { createdAt: "asc" }
+      }
+    },
+    orderBy: { createdAt: "desc" }
+  });
+
+  // Igual que en el tablero: un miembro común solo ve, dentro de cada
+  // proyecto, las tareas de su área (si tiene una y la tarea también la
+  // tiene) o si no las que tiene asignadas; el dueño de ese proyecto, los
+  // administradores y el gerente ven las de todos.
+  const data = projects.map((p) => {
+    const visibleTasks = visibleProjectTasks(
+      p.tasks,
+      p,
+      { userId: user.userId, role: user.role, areaId: user.areaId, seesAllAreas: user.seesAllAreas },
+      (t) => t.assignees.some((a) => a.user.id === user.userId)
+    );
+    return {
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      boardMode: p.boardMode,
+      // El dueño también cuenta como "profesional" del proyecto para el
+      // informe por persona, aunque no esté en la tabla de miembros.
+      members: [
+        p.owner,
+        ...p.members.map((m) => m.user).filter((u) => u.id !== p.owner.id)
+      ],
+      tasks: visibleTasks.map((t) => ({
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        priority: t.priority,
+        dueDate: t.dueDate ? t.dueDate.toISOString() : null,
+        assignees: t.assignees.map((a) => a.user)
+      }))
+    };
+  });
+
+  return (
+    <div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">Informes</h1>
+        <p className="text-sm text-slate-500">Resumen de estado y detalle de actividades por proyecto o por profesional</p>
+      </div>
+      <ReportsView projects={data} />
+    </div>
+  );
+}

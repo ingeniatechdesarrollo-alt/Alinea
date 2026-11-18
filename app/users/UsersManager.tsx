@@ -1,0 +1,328 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Role, ROLE_LABELS, AreaColorKey } from "@/lib/types";
+
+type AreaOption = { id: string; name: string; colorKey: AreaColorKey };
+
+type UserRow = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  area: AreaOption | null;
+  seesAllAreas: boolean;
+  createdAt: string;
+};
+
+export default function UsersManager({
+  initialUsers,
+  currentUserId
+}: {
+  initialUsers: UserRow[];
+  currentUserId: string;
+}) {
+  const [users, setUsers] = useState(initialUsers);
+  const [areas, setAreas] = useState<AreaOption[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState<Role>("MEMBER");
+  const [areaId, setAreaId] = useState<string>("");
+  const [seesAllAreas, setSeesAllAreas] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const [editingUser, setEditingUser] = useState<UserRow | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [editRole, setEditRole] = useState<Role>("MEMBER");
+  const [editAreaId, setEditAreaId] = useState<string>("");
+  const [editSeesAllAreas, setEditSeesAllAreas] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
+
+  // Trae la lista de áreas (editable desde el panel de Áreas de trabajo)
+  // para los selectores de arriba: cualquier área nueva que se cree
+  // aparece acá de inmediato, sin tocar código.
+  useEffect(() => {
+    fetch("/api/areas")
+      .then((r) => r.json())
+      .then(setAreas)
+      .catch(() => {});
+  }, []);
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    const res = await fetch("/api/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        email,
+        password,
+        role,
+        areaId: areaId || null,
+        seesAllAreas
+      })
+    });
+    setLoading(false);
+    if (!res.ok) {
+      const data = await res.json();
+      setError(data.error || "No se pudo crear el usuario");
+      return;
+    }
+    const created = await res.json();
+    setUsers((prev) => [...prev, created]);
+    setShowForm(false);
+    setName("");
+    setEmail("");
+    setPassword("");
+    setRole("MEMBER");
+    setAreaId("");
+    setSeesAllAreas(false);
+  }
+
+  async function handleDelete(user: UserRow) {
+    if (!confirm(`¿Eliminar a ${user.name} (${user.email})? Se le quitará de sus proyectos y tareas asignadas.`)) return;
+    setError(null);
+    const res = await fetch(`/api/users/${user.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json();
+      setError(data.error || "No se pudo eliminar el usuario");
+      return;
+    }
+    setUsers((prev) => prev.filter((u) => u.id !== user.id));
+  }
+
+  function openEdit(user: UserRow) {
+    setEditingUser(user);
+    setEditName(user.name);
+    setEditEmail(user.email);
+    setEditPassword("");
+    setEditRole(user.role);
+    setEditAreaId(user.area?.id || "");
+    setEditSeesAllAreas(user.seesAllAreas);
+    setEditError(null);
+  }
+
+  async function handleEditSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingUser) return;
+    setEditLoading(true);
+    setEditError(null);
+    const res = await fetch(`/api/users/${editingUser.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: editName,
+        email: editEmail,
+        password: editPassword || undefined,
+        role: editRole,
+        areaId: editAreaId || null,
+        seesAllAreas: editSeesAllAreas
+      })
+    });
+    setEditLoading(false);
+    if (!res.ok) {
+      const data = await res.json();
+      setEditError(data.error || "No se pudo guardar");
+      return;
+    }
+    const updated = await res.json();
+    setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+    setEditingUser(null);
+  }
+
+  return (
+    <div>
+      <div className="mb-4 flex justify-end">
+        <button className="btn" onClick={() => setShowForm(true)}>+ Nuevo usuario</button>
+      </div>
+
+      {error && <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+
+      <div className="card overflow-x-auto">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="border-b border-slate-200 text-xs text-slate-500">
+              <th className="px-4 py-2.5 font-medium">Nombre</th>
+              <th className="px-4 py-2.5 font-medium">Email</th>
+              <th className="px-4 py-2.5 font-medium">Rol</th>
+              <th className="px-4 py-2.5 font-medium">Área</th>
+              <th className="px-4 py-2.5 font-medium">Creado</th>
+              <th className="px-4 py-2.5"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map((u) => (
+              <tr key={u.id} className="border-b border-slate-100 text-sm">
+                <td className="px-4 py-2.5">{u.name}</td>
+                <td className="px-4 py-2.5">{u.email}</td>
+                <td className="px-4 py-2.5">{ROLE_LABELS[u.role]}</td>
+                <td className="px-4 py-2.5">
+                  {u.seesAllAreas ? "Todas" : u.area ? u.area.name : "—"}
+                </td>
+                <td className="px-4 py-2.5 text-xs text-slate-400">
+                  {new Date(u.createdAt).toLocaleDateString("es-ES")}
+                </td>
+                <td className="px-4 py-2.5 text-right">
+                  <div className="flex justify-end gap-3">
+                    <button onClick={() => openEdit(u)} className="text-sm text-brand-600 hover:underline">
+                      Editar
+                    </button>
+                    {u.id === currentUserId ? (
+                      <span className="text-xs text-slate-400">Tú</span>
+                    ) : (
+                      <button onClick={() => handleDelete(u)} className="text-sm text-red-600 hover:underline">
+                        Eliminar
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {showForm && (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4" onClick={() => setShowForm(false)}>
+          <form onClick={(e) => e.stopPropagation()} onSubmit={handleCreate} className="card w-full max-w-sm space-y-4 p-6">
+            <h2 className="text-lg font-semibold">Nuevo usuario</h2>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Nombre</label>
+              <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Email</label>
+              <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Contraseña</label>
+              <input type="password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} minLength={6} required />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Rol</label>
+              <select className="input" value={role} onChange={(e) => setRole(e.target.value as Role)}>
+                <option value="MEMBER">Miembro</option>
+                <option value="ADMIN">Administrador</option>
+                <option value="CONTABILIDAD">Contabilidad</option>
+                <option value="GERENTE">Gerente</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Área</label>
+              <select
+                className="input"
+                value={seesAllAreas ? "ALL" : areaId}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "ALL") {
+                    setSeesAllAreas(true);
+                    setAreaId("");
+                  } else {
+                    setSeesAllAreas(false);
+                    setAreaId(v);
+                  }
+                }}
+              >
+                <option value="">Sin área</option>
+                <option value="ALL">Todas las áreas</option>
+                {areas.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-slate-400">
+                "Todas las áreas" es para gerentes o administradores que deben ver todo, sin quedar limitados a un área.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>Cancelar</button>
+              <button type="submit" disabled={loading} className="btn">{loading ? "Creando..." : "Crear"}</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {editingUser && (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4" onClick={() => setEditingUser(null)}>
+          <form onClick={(e) => e.stopPropagation()} onSubmit={handleEditSave} className="card w-full max-w-sm space-y-4 p-6">
+            <h2 className="text-lg font-semibold">Editar usuario</h2>
+            {editError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{editError}</p>}
+            <div>
+              <label className="mb-1 block text-sm font-medium">Nombre</label>
+              <input className="input" value={editName} onChange={(e) => setEditName(e.target.value)} required />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Email</label>
+              <input type="email" className="input" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} required />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Nueva contraseña</label>
+              <input
+                type="password"
+                className="input"
+                value={editPassword}
+                onChange={(e) => setEditPassword(e.target.value)}
+                minLength={6}
+                placeholder="Déjalo vacío para no cambiarla"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Rol</label>
+              <select
+                className="input"
+                value={editRole}
+                onChange={(e) => setEditRole(e.target.value as Role)}
+                disabled={editingUser.id === currentUserId}
+              >
+                <option value="MEMBER">Miembro</option>
+                <option value="ADMIN">Administrador</option>
+                <option value="CONTABILIDAD">Contabilidad</option>
+                <option value="GERENTE">Gerente</option>
+              </select>
+              {editingUser.id === currentUserId && (
+                <p className="mt-1 text-xs text-slate-400">No puedes cambiar tu propio rol.</p>
+              )}
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Área</label>
+              <select
+                className="input"
+                value={editSeesAllAreas ? "ALL" : editAreaId}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "ALL") {
+                    setEditSeesAllAreas(true);
+                    setEditAreaId("");
+                  } else {
+                    setEditSeesAllAreas(false);
+                    setEditAreaId(v);
+                  }
+                }}
+              >
+                <option value="">Sin área</option>
+                <option value="ALL">Todas las áreas</option>
+                {areas.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-slate-400">
+                "Todas las áreas" es para gerentes o administradores que deben ver todo, sin quedar limitados a un área.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn-secondary" onClick={() => setEditingUser(null)}>Cancelar</button>
+              <button type="submit" disabled={editLoading} className="btn">{editLoading ? "Guardando..." : "Guardar cambios"}</button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}

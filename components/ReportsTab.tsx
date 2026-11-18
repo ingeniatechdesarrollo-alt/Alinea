@@ -1,0 +1,540 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { upload } from "@vercel/blob/client";
+import { safeBlobPathname } from "@/lib/blobPath";
+import { AreaColorKey, AREA_COLOR_BADGE } from "@/lib/types";
+import { downloadWordDoc, escapeHtml, imageUrlToDataUri } from "@/lib/wordExport";
+
+type Photo = { id: string; url: string; filename: string; caption: string | null; order: number };
+
+type ReportArea = { id: string; name: string; colorKey: AreaColorKey };
+
+type Report = {
+  id: string;
+  title: string;
+  body: string;
+  reportDate: string;
+  progress: number | null;
+  status: "DRAFT" | "PUBLISHED";
+  author: { id: string; name: string } | null;
+  area: ReportArea | null;
+  photos: Photo[];
+};
+
+type AreaOption = { id: string; name: string; colorKey: AreaColorKey };
+
+function todayInput() {
+  // Fecha de hoy en Colombia, en el formato que espera <input type="date">.
+  const now = new Date().toLocaleDateString("en-CA", { timeZone: "America/Bogota" });
+  return now;
+}
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString("es-CO", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "America/Bogota"
+  });
+}
+
+export default function ReportsTab({
+  projectId,
+  canManage,
+  areas,
+  userAreaId,
+  currentUserId
+}: {
+  projectId: string;
+  canManage: boolean;
+  areas: AreaOption[];
+  userAreaId: string | null;
+  currentUserId: string;
+}) {
+  const [reports, setReports] = useState<Report[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Solo puede crear informes quien administra todo el proyecto, o quien
+  // tiene un área de trabajo asignada (para el informe de su propia área).
+  // No hay límite: se pueden crear todos los informes que hagan falta.
+  const canCreate = canManage || !!userAreaId;
+  const ownArea = areas.find((a) => a.id === userAreaId) || null;
+
+  // Formulario del informe nuevo
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [date, setDate] = useState(todayInput());
+  const [progress, setProgress] = useState("");
+  const [areaId, setAreaId] = useState<string>(canManage ? "" : userAreaId || "");
+  const [publish, setPublish] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [generatingBody, setGeneratingBody] = useState(false);
+
+  // Subida de fotos
+  const [uploadingTo, setUploadingTo] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 });
+  const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  // Descarga a Word (con las fotos incrustadas, así que toma unos segundos)
+  const [exportingId, setExportingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/projects/${projectId}/reports`)
+      .then((r) => r.json())
+      .then((data) => setReports(Array.isArray(data) ? data : []))
+      .catch(() => setError("No se pudieron cargar los informes"))
+      .finally(() => setLoading(false));
+  }, [projectId]);
+
+  // Sugiere el título siguiente: si ya hay 3 informes, propone el 04.
+  const suggestedTitle = useMemo(() => {
+    const n = String(reports.length + 1).padStart(2, "0");
+    return `Registro fotográfico ${n}`;
+  }, [reports.length]);
+
+  // Puede administrar (editar, publicar/despublicar, borrar, cargar fotos)
+  // este informe puntual: quien administra todo el proyecto, quien tiene la
+  // misma área del informe, o quien lo escribió.
+  function canManageReport(report: Report) {
+    if (canManage) return true;
+    if (userAreaId && report.area?.id === userAreaId) return true;
+    return report.author?.id === currentUserId;
+  }
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+
+    const res = await fetch(`/api/projects/${projectId}/reports`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: title.trim() || suggestedTitle,
+        body,
+        reportDate: date,
+        progress: progress === "" ? null : progress,
+        status: publish ? "PUBLISHED" : "DRAFT",
+        areaId: canManage ? areaId || null : userAreaId
+      })
+    });
+
+    setSaving(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "No se pudo crear el informe");
+      return;
+    }
+
+    const created: Report = await res.json();
+    setReports((prev) => [created, ...prev]);
+    setTitle("");
+    setBody("");
+    setProgress("");
+    setDate(todayInput());
+    if (canManage) setAreaId("");
+  }
+
+  // Le pide a la IA que redacte el texto del informe antes de guardarlo. Si
+  // el cuadro "Informe" ya tiene algo escrito, se usa como notas reales de
+  // lo que pasó y la IA las redacta bien; si está vacío, la IA arma un
+  // informe breve y genérico para el área y el avance elegidos. El
+  // resultado queda en el mismo cuadro, siempre editable antes de crear el
+  // informe.
+  async function handleGenerateBody() {
+    setGeneratingBody(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/reports/generate-draft`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title.trim() || suggestedTitle,
+          areaId: canManage ? areaId || null : userAreaId,
+          progress: progress === "" ? null : progress,
+          date,
+          notes: body
+        })
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "No se pudo generar el informe con IA");
+        return;
+      }
+      const data = await res.json();
+      setBody(data.text);
+    } finally {
+      setGeneratingBody(false);
+    }
+  }
+
+  // Carga masiva: se escogen varias fotos de una vez y se suben una tras otra
+  // directo a Vercel Blob; al final se registran todas juntas en el informe.
+  async function handlePhotos(reportId: string, e: React.ChangeEvent<HTMLInputElement>) {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const files = Array.from(e.target.files);
+    e.target.value = "";
+
+    setUploadingTo(reportId);
+    setUploadProgress({ done: 0, total: files.length });
+    setError(null);
+
+    const uploaded: { url: string; filename: string }[] = [];
+
+    for (const file of files) {
+      try {
+        const blob = await upload(safeBlobPathname(file.name), file, {
+          access: "public",
+          handleUploadUrl: "/api/blob/report-photo",
+          clientPayload: JSON.stringify({ reportId }),
+          multipart: true
+        });
+        uploaded.push({ url: blob.url, filename: file.name });
+      } catch {
+        setError(`No se pudo subir "${file.name}". Las demás sí se subieron.`);
+      }
+      setUploadProgress((p) => ({ ...p, done: p.done + 1 }));
+    }
+
+    if (uploaded.length > 0) {
+      const res = await fetch(`/api/projects/${projectId}/reports/${reportId}/photos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photos: uploaded })
+      });
+      if (res.ok) {
+        const created: Photo[] = await res.json();
+        setReports((prev) =>
+          prev.map((r) => (r.id === reportId ? { ...r, photos: [...r.photos, ...created] } : r))
+        );
+      } else {
+        setError("Las fotos se subieron pero no se pudieron guardar en el informe.");
+      }
+    }
+
+    setUploadingTo(null);
+    setUploadProgress({ done: 0, total: 0 });
+  }
+
+  async function handleDeletePhoto(reportId: string, photoId: string) {
+    if (!confirm("¿Borrar esta foto del informe?")) return;
+    const res = await fetch(`/api/report-photos/${photoId}`, { method: "DELETE" });
+    if (!res.ok) return setError("No se pudo borrar la foto");
+    setReports((prev) =>
+      prev.map((r) => (r.id === reportId ? { ...r, photos: r.photos.filter((p) => p.id !== photoId) } : r))
+    );
+  }
+
+  async function handleCaption(reportId: string, photo: Photo) {
+    const caption = prompt("Descripción de la foto:", photo.caption || "");
+    if (caption === null) return;
+    const res = await fetch(`/api/report-photos/${photo.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ caption })
+    });
+    if (!res.ok) return setError("No se pudo guardar la descripción");
+    const updated: Photo = await res.json();
+    setReports((prev) =>
+      prev.map((r) =>
+        r.id === reportId
+          ? { ...r, photos: r.photos.map((p) => (p.id === photo.id ? updated : p)) }
+          : r
+      )
+    );
+  }
+
+  async function togglePublish(report: Report) {
+    const next = report.status === "PUBLISHED" ? "DRAFT" : "PUBLISHED";
+    const res = await fetch(`/api/projects/${projectId}/reports/${report.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: next })
+    });
+    if (!res.ok) return setError("No se pudo cambiar el estado del informe");
+    const updated: Report = await res.json();
+    setReports((prev) => prev.map((r) => (r.id === report.id ? updated : r)));
+  }
+
+  async function handleDeleteReport(reportId: string) {
+    if (!confirm("¿Borrar este informe con todas sus fotos? No se puede deshacer.")) return;
+    const res = await fetch(`/api/projects/${projectId}/reports/${reportId}`, { method: "DELETE" });
+    if (!res.ok) return setError("No se pudo borrar el informe");
+    setReports((prev) => prev.filter((r) => r.id !== reportId));
+  }
+
+  // Descarga el informe como archivo de Word (.doc), con el texto y las
+  // fotos incluidas, para que se pueda editar después fuera de NG-GP. Las
+  // fotos quedan incrustadas dentro del archivo desde el momento en que se
+  // descarga (no dependen de internet cuando alguien lo abra más tarde).
+  async function handleExportWord(report: Report) {
+    setExportingId(report.id);
+    setError(null);
+    try {
+      const metaParts = [formatDate(report.reportDate), report.area ? report.area.name : "General"];
+      if (report.progress !== null) metaParts.push(`Avance ${report.progress}%`);
+
+      let html = `<h1>${escapeHtml(report.title)}</h1>`;
+      html += `<p class="meta">${escapeHtml(metaParts.join(" · "))}</p>`;
+      if (report.body) {
+        html += `<p>${escapeHtml(report.body).replace(/\n/g, "<br>")}</p>`;
+      }
+
+      for (const photo of report.photos) {
+        const dataUri = await imageUrlToDataUri(photo.url);
+        html += `<img src="${dataUri || photo.url}" alt="${escapeHtml(photo.caption || photo.filename)}">`;
+        if (photo.caption) html += `<p class="caption">${escapeHtml(photo.caption)}</p>`;
+      }
+
+      downloadWordDoc(report.title, report.title, html);
+    } finally {
+      setExportingId(null);
+    }
+  }
+
+  if (loading) return <p className="text-sm text-slate-400">Cargando informes...</p>;
+
+  return (
+    <div className="space-y-6">
+      {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+
+      {canCreate && (
+        <form onSubmit={handleCreate} className="card space-y-3 p-5">
+          <h2 className="text-lg font-semibold">Nuevo informe del día</h2>
+
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+            <div>
+              <label className="mb-1 block text-sm font-medium">Título</label>
+              <input
+                className="input"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={suggestedTitle}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Fecha</label>
+              <input
+                type="date"
+                className="input"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Avance %</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                className="input w-24"
+                value={progress}
+                onChange={(e) => setProgress(e.target.value)}
+                placeholder="—"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium">Área</label>
+            {canManage ? (
+              <select className="input" value={areaId} onChange={(e) => setAreaId(e.target.value)}>
+                <option value="">General (sin área)</option>
+                {areas.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+            ) : (
+              <p className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                {ownArea ? ownArea.name : "Sin área"} — este informe queda registrado con tu área de trabajo.
+              </p>
+            )}
+          </div>
+
+          <div>
+            <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+              <label className="block text-sm font-medium">Informe</label>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={generatingBody}
+                onClick={handleGenerateBody}
+              >
+                {generatingBody ? "Generando..." : "Generar con IA"}
+              </button>
+            </div>
+            <textarea
+              className="input min-h-[120px]"
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              placeholder='Escribe o pega acá el informe del día. Ej: Hoy se desarrolló el contrato de tubería en el piso 2... O deja este cuadro vacío y dale a "Generar con IA".'
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={publish}
+                onChange={(e) => setPublish(e.target.checked)}
+                className="rounded border-slate-300"
+              />
+              Publicar de una vez al portal del cliente
+            </label>
+            <button type="submit" disabled={saving} className="btn">
+              {saving ? "Guardando..." : "Crear informe"}
+            </button>
+          </div>
+
+          <p className="text-xs text-slate-400">
+            Después de crearlo puedes cargarle las fotos, todas de una vez. No hay límite: puedes crear
+            todos los informes que necesites.
+          </p>
+        </form>
+      )}
+
+      {reports.length === 0 && (
+        <p className="card p-6 text-sm text-slate-500">
+          Todavía no hay informes en este proyecto.
+        </p>
+      )}
+
+      {reports.map((report) => {
+        const manageThis = canManageReport(report);
+        return (
+          <article key={report.id} className="card p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-base font-semibold">{report.title}</h3>
+                  <span
+                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                      report.status === "PUBLISHED"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-amber-50 text-amber-700"
+                    }`}
+                  >
+                    {report.status === "PUBLISHED" ? "Publicado" : "Borrador"}
+                  </span>
+                  <span
+                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                      report.area ? AREA_COLOR_BADGE[report.area.colorKey] : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    {report.area ? report.area.name : "General"}
+                  </span>
+                  {report.progress !== null && (
+                    <span className="inline-flex items-center rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-700">
+                      Avance {report.progress}%
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-slate-400">
+                  {formatDate(report.reportDate)}
+                  {report.author && ` · ${report.author.name}`}
+                  {` · ${report.photos.length} foto${report.photos.length === 1 ? "" : "s"}`}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className="btn-secondary"
+                  disabled={exportingId === report.id}
+                  onClick={() => handleExportWord(report)}
+                >
+                  {exportingId === report.id ? "Preparando..." : "Descargar Word"}
+                </button>
+                {manageThis && (
+                  <>
+                    <button className="btn-secondary" onClick={() => togglePublish(report)}>
+                      {report.status === "PUBLISHED" ? "Despublicar" : "Publicar"}
+                    </button>
+                    <button
+                      className="btn-secondary text-red-600 hover:bg-red-50"
+                      onClick={() => handleDeleteReport(report.id)}
+                    >
+                      Borrar
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {report.body && (
+              <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                {report.body}
+              </p>
+            )}
+
+            {manageThis && (
+              <div className="mt-4">
+                <input
+                  ref={(el) => {
+                    fileInputs.current[report.id] = el;
+                  }}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => handlePhotos(report.id, e)}
+                />
+                <button
+                  className="btn-secondary"
+                  disabled={uploadingTo !== null}
+                  onClick={() => fileInputs.current[report.id]?.click()}
+                >
+                  {uploadingTo === report.id
+                    ? `Subiendo ${uploadProgress.done}/${uploadProgress.total}...`
+                    : "+ Cargar fotos"}
+                </button>
+              </div>
+            )}
+
+            {report.photos.length > 0 && (
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                {report.photos.map((photo) => (
+                  <div key={photo.id} className="group relative overflow-hidden rounded-lg bg-slate-100">
+                    <a href={photo.url} target="_blank" rel="noopener noreferrer">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={photo.url}
+                        alt={photo.caption || photo.filename}
+                        loading="lazy"
+                        className="aspect-square w-full object-cover"
+                      />
+                    </a>
+                    {photo.caption && (
+                      <p className="truncate bg-white px-2 py-1 text-[11px] text-slate-600">
+                        {photo.caption}
+                      </p>
+                    )}
+                    {manageThis && (
+                      <div className="absolute right-1 top-1 flex gap-1 opacity-0 transition group-hover:opacity-100">
+                        <button
+                          onClick={() => handleCaption(report.id, photo)}
+                          className="rounded bg-black/60 px-1.5 py-0.5 text-[11px] text-white hover:bg-black/80"
+                          title="Editar descripción"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => handleDeletePhoto(report.id, photo.id)}
+                          className="rounded bg-black/60 px-1.5 py-0.5 text-[11px] text-white hover:bg-red-600"
+                          title="Borrar foto"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </article>
+        );
+      })}
+    </div>
+  );
+}
