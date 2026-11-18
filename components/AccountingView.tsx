@@ -272,7 +272,7 @@ export default function AccountingView({ initialExpenses }: { initialExpenses: E
                             <div className="flex gap-2">
                               <input
                                 className="input"
-                                placeholder="Pregúntale algo al encargado de la obra..."
+                                placeholder="Pregúntale algo al encargado del proyecto..."
                                 value={commentDrafts[expense.id] || ""}
                                 onChange={(e) =>
                                   setCommentDrafts((prev) => ({ ...prev, [expense.id]: e.target.value }))

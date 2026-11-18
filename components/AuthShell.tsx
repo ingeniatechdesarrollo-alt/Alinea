@@ -15,7 +15,7 @@ type Props = {
 
 const FEATURES = [
   "Proyectos, tareas y cronogramas alineados en un solo lugar",
-  "Presupuestos, gastos y reportes de obra al día",
+  "Presupuestos, gastos y reportes de proyecto al día",
   "Chat del equipo y portal para tus clientes"
 ];
 

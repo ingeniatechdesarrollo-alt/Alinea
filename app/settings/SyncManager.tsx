@@ -91,7 +91,7 @@ export default function SyncManager() {
       <div className="card p-5">
         <h2 className="font-semibold">2. Importar desde ObraFlow</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Sube el archivo que ObraFlow generó con su menú Exportar → Exportar JSON para NG-GP. Las obras y tareas
+          Sube el archivo que ObraFlow generó con su menú Exportar → Exportar JSON para NG-GP. Los proyectos y tareas
           que ya existan (mismo nombre) se actualizan; las que no existan se crean.
         </p>
         <input ref={fileInputRef} type="file" accept="application/json,.json" hidden onChange={handleFileChosen} />
@@ -106,11 +106,11 @@ export default function SyncManager() {
         <div className="card space-y-2 p-5 text-sm">
           <h3 className="font-semibold">Resultado de la importación</h3>
           <p>
-            Obras: {result.obrasCreadas} nueva(s), {result.obrasActualizadas} actualizada(s)
+            Proyectos: {result.obrasCreadas} nuevo(s), {result.obrasActualizadas} actualizado(s)
           </p>
           <p>
             Tareas: {result.tareasCreadas} nueva(s), {result.tareasActualizadas} actualizada(s)
-            {result.tareasOmitidas ? `, ${result.tareasOmitidas} omitida(s) por no encontrar su obra` : ""}
+            {result.tareasOmitidas ? `, ${result.tareasOmitidas} omitida(s) por no encontrar su proyecto` : ""}
           </p>
           {result.personasSinCuenta.length > 0 && (
             <p className="text-amber-700">

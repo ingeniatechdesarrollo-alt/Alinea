@@ -86,7 +86,7 @@ export default async function CalendarObrasPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Calendario de equipo</h1>
         <p className="text-sm text-slate-500">
-          Actividades de tus obras por fecha. Elige una obra puntual o mira todas juntas, y filtra por área.
+          Actividades de tus proyectos por fecha. Elige un proyecto puntual o mira todos juntos, y filtra por área.
         </p>
       </div>
       <CalendarObrasView obras={obras} tasks={tasks} hasOwnTeam={myTeamMemberIds.size > 0} />

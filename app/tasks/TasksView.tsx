@@ -288,7 +288,7 @@ export default function TasksView({
     <div>
       <ExternalTasksSection initialExternalTasks={initialExternalTasks} />
 
-      <h2 className="mb-3 text-base font-semibold text-slate-800">Tareas de tus obras</h2>
+      <h2 className="mb-3 text-base font-semibold text-slate-800">Tareas de tus proyectos</h2>
       <ProjectTasksSection initialTasks={initialTasks} />
     </div>
   );

@@ -66,7 +66,7 @@ export default async function TasksPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Tareas</h1>
         <p className="text-sm text-slate-500">
-          Tus pendientes personales, y todas las actividades que tienes asignadas en tus obras.
+          Tus pendientes personales, y todas las actividades que tienes asignadas en tus proyectos.
         </p>
       </div>
       <TasksView initialExternalTasks={myExternalTasks} initialTasks={myTasks} />

@@ -33,7 +33,7 @@ export default function PinGate({ token, projectName }: { token: string; project
     <div className="mx-auto flex min-h-[60vh] max-w-sm flex-col justify-center">
       <div className="card space-y-4 p-6">
         <div>
-          <p className="text-xs uppercase tracking-wide text-slate-400">Seguimiento de obra</p>
+          <p className="text-xs uppercase tracking-wide text-slate-400">Seguimiento del proyecto</p>
           <h1 className="text-xl font-bold">{projectName}</h1>
           <p className="mt-1 text-sm text-slate-500">
             Escribe el PIN que te compartimos para ver el avance de tu proyecto.

@@ -15,7 +15,7 @@ const TABS: { key: View; label: string }[] = [
   { key: "board", label: "Tablero" },
   { key: "gantt", label: "Cronograma" },
   { key: "budget", label: "Presupuesto" },
-  { key: "reports", label: "Informes de obra" },
+  { key: "reports", label: "Informes de proyecto" },
   { key: "expenses", label: "Gastos" }
 ];
 

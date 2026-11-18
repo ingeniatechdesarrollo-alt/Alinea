@@ -43,8 +43,8 @@ export default async function ContabilidadPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Contabilidad</h1>
         <p className="text-sm text-slate-500">
-          Gastos de todas las obras: marca cada uno como causado, no causado o pendiente, y
-          coméntale al encargado de la obra si falta algo.
+          Gastos de todos los proyectos: marca cada uno como causado, no causado o pendiente, y
+          coméntale al encargado del proyecto si falta algo.
         </p>
       </div>
       <AccountingView initialExpenses={expenses} />

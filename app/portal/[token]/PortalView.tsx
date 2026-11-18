@@ -112,7 +112,7 @@ export default function PortalView({
   }, [budgetItems]);
 
   const tabs: { key: View; label: string }[] = [
-    { key: "avance", label: "Avance de obra" },
+    { key: "avance", label: "Avance del proyecto" },
     { key: "fotos", label: `Registro fotográfico${allPhotos.length ? ` (${allPhotos.length})` : ""}` },
     ...(deliveryManual ? [{ key: "manual" as View, label: "Manual de entrega" }] : []),
     ...(showSchedule ? [{ key: "cronograma" as View, label: "Cronograma" }] : []),
@@ -122,7 +122,7 @@ export default function PortalView({
   return (
     <div className="space-y-6">
       <header className="card p-6">
-        <p className="text-xs uppercase tracking-wide text-slate-400">Seguimiento de obra</p>
+        <p className="text-xs uppercase tracking-wide text-slate-400">Seguimiento del proyecto</p>
         <h1 className="text-2xl font-bold">{projectName}</h1>
         {projectDescription && <p className="mt-1 text-sm text-slate-500">{projectDescription}</p>}
         <p className="mt-3 text-sm text-slate-600">Hola, {clientName}. Este es el estado de tu proyecto.</p>
@@ -163,7 +163,7 @@ export default function PortalView({
         <div className="space-y-4">
           {reports.length === 0 && (
             <p className="card p-6 text-sm text-slate-500">
-              Todavía no hay informes publicados. Apenas empiece la obra los verás acá.
+              Todavía no hay informes publicados. Apenas empiece el proyecto los verás acá.
             </p>
           )}
 

@@ -134,9 +134,9 @@ export default function CalendarObrasView({ obras, tasks, hasOwnTeam }: Props) {
     <div className="space-y-4">
       <div className="card flex flex-wrap items-end gap-3 p-4">
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-500">Obra</label>
+          <label className="mb-1 block text-xs font-medium text-slate-500">Proyecto</label>
           <select className="input" value={obraId} onChange={(e) => setObraId(e.target.value)}>
-            <option value="ALL">Todas las obras</option>
+            <option value="ALL">Todos los proyectos</option>
             {obras.map((o) => (
               <option key={o.id} value={o.id}>
                 {o.name}

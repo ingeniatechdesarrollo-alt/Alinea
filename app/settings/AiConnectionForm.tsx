@@ -71,7 +71,7 @@ export default function AiConnectionForm() {
     <div className="card p-6">
       <h2 className="text-lg font-semibold">Conectar a IA</h2>
       <p className="mt-1 text-sm text-slate-500">
-        Se usa para redactar el "Manual de entrega" (en Informes de obra, dentro de cada proyecto): junta
+        Se usa para redactar el "Manual de entrega" (en Informes de proyecto, dentro de cada proyecto): junta
         los informes publicados de todas las áreas y la IA los convierte en un solo documento ordenado
         para el cliente. Sin conectar, el manual igual se genera, pero solo compilado, sin redacción de IA.
       </p>
